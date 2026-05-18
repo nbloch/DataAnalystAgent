@@ -1,6 +1,12 @@
-from datasets import load_dataset
+import os
+from openai import OpenAI
 
-# ds = load_dataset("bitext/Bitext-customer-support-llm-chatbot-training-dataset")
+client = OpenAI(
+    base_url="https://api.tokenfactory.uk-south1.nebius.com/v1/",
+    api_key=os.environ.get("NEBIUS_API_KEY"),
+)
+
+MODEL = "deepseek-ai/DeepSeek-V4-Pro"
 
 SYSTEM_PROMPT = """
 # PLACEHOLDER: system prompt goes here
@@ -8,8 +14,17 @@ SYSTEM_PROMPT = """
 
 
 def call_model(messages: list[dict]) -> str:
-    # PLACEHOLDER: call your model API here and return the assistant reply as a string
-    raise NotImplementedError("Replace this with your model call")
+    formatted = []
+    for msg in messages:
+        if msg["role"] == "user":
+            formatted.append({"role": "user", "content": [{"type": "text", "text": msg["content"]}]})
+        else:
+            formatted.append(msg)
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=[{"role": "system", "content": SYSTEM_PROMPT}] + formatted,
+    )
+    return response.choices[0].message.content
 
 
 def run_agent():
