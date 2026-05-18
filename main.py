@@ -2,11 +2,11 @@ import os
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="https://api.tokenfactory.uk-south1.nebius.com/v1/",
+    base_url="https://api.tokenfactory.us-central1.nebius.com/v1/",
     api_key=os.environ.get("NEBIUS_API_KEY"),
 )
 
-MODEL = "deepseek-ai/DeepSeek-V4-Pro"
+MODEL = "deepseek-ai/DeepSeek-V3.2"
 
 SYSTEM_PROMPT = """
 # PLACEHOLDER: system prompt goes here
