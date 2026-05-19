@@ -2,10 +2,12 @@ import json
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+load_dotenv(os.path.join(os.path.dirname(__file__), "../.env"))
 
-from main import DataAnalystAgent, RequestCategory
+from agent import DataAnalystAgent, RequestCategory
 
 _raw = json.load(open(os.path.join(os.path.dirname(__file__), "eval_classify.json")))
 EVALS: list[tuple[str, RequestCategory]] = [
@@ -14,7 +16,7 @@ EVALS: list[tuple[str, RequestCategory]] = [
 
 
 def run_single(agent: DataAnalystAgent, idx: int, question: str, expected: RequestCategory):
-    predicted = agent.classify_request(question)
+    predicted = agent._classify(question)
     return idx, question, expected, predicted, predicted == expected
 
 

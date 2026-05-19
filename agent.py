@@ -153,9 +153,11 @@ You are a data analyst agent. Answer the user requests about the Bitext customer
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.SYSTEM_PROMPT),
             ("user", """Classify the following user request into exactly one of these categories:
-- Structured: concrete, data-driven questions about the dataset (counts, distributions, examples, categories)
-- Unstructured: open-ended questions requiring summarization at the end
-- Out-of-scope: questions unrelated to the dataset
+- Structured: questions with a specific, enumerable answer retrievable directly from the dataset — counts, distributions, lists of categories/intents, specific example lookups (e.g. "How many rows?", "What intents exist?", "Show me 3 examples")
+- Unstructured: qualitative or interpretive questions about the dataset content that require reading and analyzing the text — patterns, themes, tone, writing style, sentiment, quality, comparisons, open-ended summaries (e.g. "What themes emerge?", "Describe the tone", "How do agents handle X?", "Summarize the FEEDBACK category")
+- Out-of-scope: questions entirely unrelated to the Bitext customer support dataset
+
+Note: questions about how agents behave, write, or handle situations are IN SCOPE if they refer to what the dataset contains.
 
 User request: {user_input}"""),
         ])
@@ -212,20 +214,20 @@ User request: {user_input}"""),
             return {
                 RequestCategory.OUT_OF_SCOPE: "reject",
                 RequestCategory.STRUCTURED: "structured",
-                RequestCategory.UNSTRUCTURED: "react",
+                RequestCategory.UNSTRUCTURED: "unstructured",
             }[state["category"]]
 
         builder = StateGraph(AgentState)
         builder.add_node("classify", classify_node)
         builder.add_node("reject", reject_node)
         builder.add_node("structured", structured_node)
-        builder.add_node("react", unstructured_node)
+        builder.add_node("unstructured", unstructured_node)
 
         builder.add_edge(START, "classify")
-        builder.add_conditional_edges("classify", route_classify, ["reject", "structured", "react"])
+        builder.add_conditional_edges("classify", route_classify, ["reject", "structured", "unstructured"])
         builder.add_edge("reject", END)
         builder.add_edge("structured", END)
-        builder.add_edge("react", END)
+        builder.add_edge("unstructured", END)
 
         return builder.compile()
 
