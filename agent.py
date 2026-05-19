@@ -122,10 +122,10 @@ TOOLS = [get_distribution, get_examples, count_rows, search_keyword, get_stats]
 
 class DataAnalystAgent:
     MODEL = "deepseek-ai/DeepSeek-V3.2"
-    SYSTEM_PROMPT = """
+    CLASSIFIER_SYSTEM_PROMPT = """
 You are a data analyst agent. Answer the user requests about the Bitext customer support dataset.
 """
-    AGENT_SYSTEM_PROMPT = """
+    AGENT_CLASSIFIER_SYSTEM_PROMPT = """
 You are a data analyst agent. Answer the user requests about the Bitext customer support dataset.
 
 The dataset contains the following categories and intents:
@@ -153,7 +153,7 @@ The dataset contains the following categories and intents:
     def _classify(self, user_input: str) -> RequestCategory:
         # FIXME: Improve performance on that
         prompt = ChatPromptTemplate.from_messages([
-            ("system", self.SYSTEM_PROMPT),
+            ("system", self.CLASSIFIER_SYSTEM_PROMPT),
             ("user", """Classify the following user request into exactly one of these categories:
 - Structured: questions with a specific, enumerable answer retrievable directly from the dataset — counts, distributions, lists of categories/intents, specific example lookups (e.g. "How many rows?", "What intents exist?", "Show me 3 examples")
 - Unstructured: qualitative or interpretive questions about the dataset content that require reading and analyzing the text — patterns, themes, tone, writing style, sentiment, quality, comparisons, open-ended summaries (e.g. "What themes emerge?", "Describe the tone", "How do agents handle X?", "Summarize the FEEDBACK category")
@@ -167,7 +167,7 @@ User request: {user_input}"""),
         return chain.invoke({"user_input": user_input}).category
 
     def _build_graph(self):
-        react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.AGENT_SYSTEM_PROMPT)
+        react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.AGENT_CLASSIFIER_SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
             category = self._classify(state["messages"][-1].content)
