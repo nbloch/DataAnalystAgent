@@ -2,14 +2,14 @@ import os
 from enum import Enum
 from typing import Annotated
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode, create_react_agent
+from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
@@ -154,7 +154,7 @@ You are a data analyst agent. Answer the user requests about the Bitext customer
             ("system", self.SYSTEM_PROMPT),
             ("user", """Classify the following user request into exactly one of these categories:
 - Structured: concrete, data-driven questions about the dataset (counts, distributions, examples, categories)
-- Unstructured: open-ended questions requiring summarization or interpretation of the dataset
+- Unstructured: open-ended questions requiring summarization at the end
 - Out-of-scope: questions unrelated to the dataset
 
 User request: {user_input}"""),
@@ -163,8 +163,6 @@ User request: {user_input}"""),
         return chain.invoke({"user_input": user_input}).category
 
     def _build_graph(self):
-        llm_forced_tool = self.llm.bind_tools(TOOLS, tool_choice="required")
-
         react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
@@ -180,14 +178,9 @@ User request: {user_input}"""),
         def structured_node(state: AgentState) -> dict:
             return react_func(state, 10)
 
-
-        def structured_answer_node(state: AgentState) -> dict:
-            messages = [SystemMessage(content=self.SYSTEM_PROMPT)] + state["messages"]
-            return {"messages": [self.llm.bind_tools(TOOLS, tool_choice="none").invoke(messages)]}
-        
         def unstructured_node(state: AgentState) -> dict:
             return react_func(state, 20)
-        
+
         def react_func(state: AgentState, recursion_limit) -> dict:
             user_msg = next(m for m in state["messages"] if isinstance(m, HumanMessage)).content
             last_ai_content = None
@@ -226,16 +219,12 @@ User request: {user_input}"""),
         builder.add_node("classify", classify_node)
         builder.add_node("reject", reject_node)
         builder.add_node("structured", structured_node)
-        builder.add_node("structured_tool", ToolNode(TOOLS))
-        builder.add_node("structured_answer", structured_answer_node)
         builder.add_node("react", unstructured_node)
 
         builder.add_edge(START, "classify")
         builder.add_conditional_edges("classify", route_classify, ["reject", "structured", "react"])
         builder.add_edge("reject", END)
-        builder.add_edge("structured", "structured_tool")
-        builder.add_edge("structured_tool", "structured_answer")
-        builder.add_edge("structured_answer", END)
+        builder.add_edge("structured", END)
         builder.add_edge("react", END)
 
         return builder.compile()
@@ -258,16 +247,7 @@ User request: {user_input}"""),
                     msgs = update.get("messages", [])
                     if node_name == "classify":
                         print(f"  [classify] {update['category'].value}")
-                    elif node_name == "structured":
-                        for msg in msgs:
-                            if hasattr(msg, "tool_calls"):
-                                for tc in msg.tool_calls:
-                                    args_str = ", ".join(f"{k}={v!r}" for k, v in tc["args"].items())
-                                    print(f"  [tool call] {tc['name']}({args_str})")
-                    elif node_name == "structured_tool":
-                        for msg in msgs:
-                            print(f"  [tool result] {str(msg.content)[:300]}")
-                    elif node_name in ("structured_answer", "reject", "react"):
+                    elif node_name in ("structured", "reject", "react"):
                         for msg in msgs:
                             if msg.content:
                                 reply = msg.content
