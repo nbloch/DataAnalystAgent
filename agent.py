@@ -149,7 +149,7 @@ User request: {user_input}"""),
 
         def structured_answer_node(state: AgentState) -> dict:
             messages = [SystemMessage(content=self.SYSTEM_PROMPT)] + state["messages"]
-            return {"messages": [self.llm.invoke(messages)]}
+            return {"messages": [self.llm.bind_tools(TOOLS, tool_choice="none").invoke(messages)]}
 
         def react_node(state: AgentState) -> dict:
             user_msg = next(m for m in state["messages"] if isinstance(m, HumanMessage)).content
