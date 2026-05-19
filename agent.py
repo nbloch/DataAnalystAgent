@@ -43,12 +43,6 @@ class AgentState(TypedDict):
 # Tool input schemas
 # ---------------------------------------------------------------------------
 
-class GetCategoriesInput(BaseModel):
-    pass
-
-class GetIntentsInput(BaseModel):
-    category: str | None = Field(default=None, description="Filter by category (case-sensitive). If None, returns all intents.")
-
 class GetDistributionInput(BaseModel):
     column: str = Field(description="Column to compute distribution for. Common values: 'category', 'intent', 'flags'.")
 
@@ -92,12 +86,6 @@ class DatasetStats(BaseModel):
 
 _analyzer = DatasetAnalyzer()
 
-def _get_categories() -> list[str]:
-    return _analyzer.get_categories()
-
-def _get_intents(category: str | None = None) -> list[str]:
-    return _analyzer.get_intents(category)
-
 def _get_distribution(column: str) -> dict[str, int]:
     return _analyzer.get_distribution(column)
 
@@ -115,15 +103,13 @@ def _search_keyword(keyword: str, column: str = "instruction") -> list[DatasetRo
 def _get_stats() -> DatasetStats:
     return DatasetStats(**_analyzer.get_stats())
 
-get_categories   = StructuredTool(name="get_categories",   description="Return all unique categories in the dataset.",                                              func=_get_categories,   args_schema=GetCategoriesInput)
-get_intents      = StructuredTool(name="get_intents",      description="Return unique intents, optionally filtered by category.",                                   func=_get_intents,      args_schema=GetIntentsInput)
 get_distribution = StructuredTool(name="get_distribution", description="Return value counts for a column. Common columns: 'category', 'intent', 'flags'.",          func=_get_distribution, args_schema=GetDistributionInput)
 get_examples     = StructuredTool(name="get_examples",     description="Return up to n examples, optionally filtered by category and/or intent.",                   func=_get_examples,     args_schema=GetExamplesInput)
 count_rows       = StructuredTool(name="count_rows",       description="Count rows in the dataset, optionally filtered by category and/or intent.",                 func=_count_rows,       args_schema=CountRowsInput)
 search_keyword   = StructuredTool(name="search_keyword",   description="Search for rows where a column contains a keyword (case-insensitive).",                     func=_search_keyword,   args_schema=SearchKeywordInput)
 get_stats        = StructuredTool(name="get_stats",        description="Return dataset statistics: row count, columns, unique counts, avg message lengths.",         func=_get_stats,        args_schema=GetStatsInput)
 
-TOOLS = [get_categories, get_intents, get_distribution, get_examples, count_rows, search_keyword, get_stats]
+TOOLS = [get_distribution, get_examples, count_rows, search_keyword, get_stats]
 
 # ---------------------------------------------------------------------------
 # ReAct prompt (explicit Thought / Action / Observation format)
@@ -138,6 +124,22 @@ class DataAnalystAgent:
     MODEL = "deepseek-ai/DeepSeek-V3.2"
     SYSTEM_PROMPT = """
 You are a data analyst agent. Answer the user requests about the Bitext customer support dataset.
+"""
+    AGENT_SYSTEM_PROMPT = """
+You are a data analyst agent. Answer the user requests about the Bitext customer support dataset.
+
+The dataset contains the following categories and intents:
+- ACCOUNT: create_account, delete_account, edit_account, recover_password, registration_problems, switch_account
+- CANCEL: check_cancellation_fee
+- CONTACT: contact_customer_service, contact_human_agent
+- DELIVERY: delivery_options, delivery_period
+- FEEDBACK: complaint, review
+- INVOICE: check_invoice, get_invoice
+- ORDER: cancel_order, change_order, place_order, track_order
+- PAYMENT: check_payment_methods, payment_issue
+- REFUND: check_refund_policy, get_refund, track_refund
+- SHIPPING: change_shipping_address, set_up_shipping_address
+- SUBSCRIPTION: newsletter_subscription
 """
 
     def __init__(self):
@@ -165,7 +167,7 @@ User request: {user_input}"""),
         return chain.invoke({"user_input": user_input}).category
 
     def _build_graph(self):
-        react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.SYSTEM_PROMPT)
+        react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.AGENT_SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
             category = self._classify(state["messages"][-1].content)
