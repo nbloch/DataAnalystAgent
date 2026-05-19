@@ -210,5 +210,7 @@ User request: {user_input}"""),
             print(f"Assistant: {reply}\n")
 
 
+graph = DataAnalystAgent().graph
+
 if __name__ == "__main__":
     DataAnalystAgent().run()
