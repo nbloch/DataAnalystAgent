@@ -144,19 +144,22 @@ User request: {user_input}"""),
             )]}
 
         def structured_node(state: AgentState) -> dict:
-            messages = [SystemMessage(content=self.SYSTEM_PROMPT)] + state["messages"]
-            return {"messages": [llm_forced_tool.invoke(messages)]}
+            return react_func(state, 10)
+
 
         def structured_answer_node(state: AgentState) -> dict:
             messages = [SystemMessage(content=self.SYSTEM_PROMPT)] + state["messages"]
             return {"messages": [self.llm.bind_tools(TOOLS, tool_choice="none").invoke(messages)]}
-
-        def react_node(state: AgentState) -> dict:
+        
+        def unstructured_node(state: AgentState) -> dict:
+            return react_func(state, 20)
+        
+        def react_func(state: AgentState, recursion_limit) -> dict:
             user_msg = next(m for m in state["messages"] if isinstance(m, HumanMessage)).content
             last_ai_content = None
             for chunk in react_subgraph.stream(
                 {"messages": [HumanMessage(content=user_msg)]},
-                {"recursion_limit": 10},
+                {"recursion_limit": recursion_limit},
                 stream_mode="updates",
             ):
                 for node_name, update in chunk.items():
@@ -174,6 +177,7 @@ User request: {user_input}"""),
                             print(f"  [tool result] {str(msg.content)[:300]}")
             return {"messages": [AIMessage(content=last_ai_content or "I'm sorry, I couldn't find an answer.")]}
 
+
         def route_classify(state: AgentState) -> str:
             return {
                 RequestCategory.OUT_OF_SCOPE: "reject",
@@ -187,7 +191,7 @@ User request: {user_input}"""),
         builder.add_node("structured", structured_node)
         builder.add_node("structured_tool", ToolNode(TOOLS))
         builder.add_node("structured_answer", structured_answer_node)
-        builder.add_node("react", react_node)
+        builder.add_node("react", unstructured_node)
 
         builder.add_edge(START, "classify")
         builder.add_conditional_edges("classify", route_classify, ["reject", "structured", "react"])
