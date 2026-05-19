@@ -245,9 +245,7 @@ User request: {user_input}"""),
             ):
                 for node_name, update in chunk.items():
                     msgs = update.get("messages", [])
-                    if node_name == "classify":
-                        print(f"  [classify] {update['category'].value}")
-                    elif node_name in ("structured", "reject", "react"):
+                    if node_name in ("structured", "reject", "react"):
                         for msg in msgs:
                             if msg.content:
                                 reply = msg.content
