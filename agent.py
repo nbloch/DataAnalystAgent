@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
-from langgraph.prebuilt import ToolNode
+from langgraph.prebuilt import ToolNode, create_react_agent
 from pydantic import BaseModel
 from typing_extensions import TypedDict
 
@@ -36,7 +36,6 @@ class ClassifiedRequest(BaseModel):
 class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     category: RequestCategory | None
-    tool_calls_count: int
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +91,10 @@ def get_stats() -> dict:
 
 TOOLS = [get_categories, get_intents, get_distribution, get_examples, count_rows, search_keyword, get_stats]
 
+# ---------------------------------------------------------------------------
+# ReAct prompt (explicit Thought / Action / Observation format)
+# ---------------------------------------------------------------------------
+
 
 # ---------------------------------------------------------------------------
 # Agent
@@ -126,12 +129,13 @@ User request: {user_input}"""),
         return chain.invoke({"user_input": user_input}).category
 
     def _build_graph(self):
-        llm_with_tools = self.llm.bind_tools(TOOLS)
         llm_forced_tool = self.llm.bind_tools(TOOLS, tool_choice="required")
+
+        react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
             category = self._classify(state["messages"][-1].content)
-            return {"category": category, "tool_calls_count": 0}
+            return {"category": category}
 
         def reject_node(state: AgentState) -> dict:
             return {"messages": [AIMessage(
@@ -148,12 +152,16 @@ User request: {user_input}"""),
             return {"messages": [self.llm.invoke(messages)]}
 
         def react_node(state: AgentState) -> dict:
-            messages = [SystemMessage(content=self.SYSTEM_PROMPT)] + state["messages"]
-            tool_calls_count = state.get("tool_calls_count", 0)
-            llm = self.llm if tool_calls_count >= 3 else llm_with_tools
-            response = llm.invoke(messages)
-            new_count = tool_calls_count + (1 if getattr(response, "tool_calls", None) else 0)
-            return {"messages": [response], "tool_calls_count": new_count}
+            user_msg = next(m for m in state["messages"] if isinstance(m, HumanMessage)).content
+            result = react_subgraph.invoke(
+                {"messages": [HumanMessage(content=user_msg)]},
+                {"recursion_limit": 10},  # allows up to ~3 tool call cycles
+            )
+            last = next(
+                (m for m in reversed(result["messages"]) if isinstance(m, AIMessage) and m.content),
+                None,
+            )
+            return {"messages": [AIMessage(content=last.content if last else "I'm sorry, I couldn't find an answer to your question.")]}
 
         def route_classify(state: AgentState) -> str:
             return {
@@ -162,12 +170,6 @@ User request: {user_input}"""),
                 RequestCategory.UNSTRUCTURED: "react",
             }[state["category"]]
 
-        def route_react(state: AgentState) -> str:
-            last = state["messages"][-1]
-            if getattr(last, "tool_calls", None):
-                return "react_tool"
-            return END
-
         builder = StateGraph(AgentState)
         builder.add_node("classify", classify_node)
         builder.add_node("reject", reject_node)
@@ -175,7 +177,6 @@ User request: {user_input}"""),
         builder.add_node("structured_tool", ToolNode(TOOLS))
         builder.add_node("structured_answer", structured_answer_node)
         builder.add_node("react", react_node)
-        builder.add_node("react_tool", ToolNode(TOOLS))
 
         builder.add_edge(START, "classify")
         builder.add_conditional_edges("classify", route_classify, ["reject", "structured", "react"])
@@ -183,8 +184,7 @@ User request: {user_input}"""),
         builder.add_edge("structured", "structured_tool")
         builder.add_edge("structured_tool", "structured_answer")
         builder.add_edge("structured_answer", END)
-        builder.add_conditional_edges("react", route_react, ["react_tool", END])
-        builder.add_edge("react_tool", "react")
+        builder.add_edge("react", END)
 
         return builder.compile()
 
@@ -200,7 +200,6 @@ User request: {user_input}"""),
             result = self.graph.invoke({
                 "messages": [HumanMessage(content=user_input)],
                 "category": None,
-                "tool_calls_count": 0,
             })
 
             last_ai = next(
@@ -209,3 +208,7 @@ User request: {user_input}"""),
             )
             reply = last_ai.content if last_ai else "I'm sorry, I couldn't find an answer to your question."
             print(f"Assistant: {reply}\n")
+
+
+if __name__ == "__main__":
+    DataAnalystAgent().run()
