@@ -6,6 +6,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent
@@ -157,24 +158,27 @@ User request: {user_input}"""),
         def react_func(state: AgentState, recursion_limit) -> dict:
             user_msg = next(m for m in state["messages"] if isinstance(m, HumanMessage)).content
             last_ai_content = None
-            for chunk in react_subgraph.stream(
-                {"messages": [HumanMessage(content=user_msg)]},
-                {"recursion_limit": recursion_limit},
-                stream_mode="updates",
-            ):
-                for node_name, update in chunk.items():
-                    msgs = update.get("messages", [])
-                    if node_name == "agent":
-                        for msg in msgs:
-                            if hasattr(msg, "tool_calls") and msg.tool_calls:
-                                for tc in msg.tool_calls:
-                                    args_str = ", ".join(f"{k}={v!r}" for k, v in tc["args"].items())
-                                    print(f"  [tool call] {tc['name']}({args_str})")
-                            elif isinstance(msg, AIMessage) and msg.content:
-                                last_ai_content = msg.content
-                    elif node_name == "tools":
-                        for msg in msgs:
-                            print(f"  [tool result] {str(msg.content)[:300]}")
+            try:
+                for chunk in react_subgraph.stream(
+                    {"messages": [HumanMessage(content=user_msg)]},
+                    {"recursion_limit": recursion_limit},
+                    stream_mode="updates",
+                ):
+                    for node_name, update in chunk.items():
+                        msgs = update.get("messages", [])
+                        if node_name == "agent":
+                            for msg in msgs:
+                                if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                    for tc in msg.tool_calls:
+                                        args_str = ", ".join(f"{k}={v!r}" for k, v in tc["args"].items())
+                                        print(f"  [tool call] {tc['name']}({args_str})")
+                                elif isinstance(msg, AIMessage) and msg.content:
+                                    last_ai_content = msg.content
+                        elif node_name == "tools":
+                            for msg in msgs:
+                                print(f"  [tool result] {str(msg.content)[:300]}")
+            except GraphRecursionError:
+                return {"messages": [AIMessage(content="I'm sorry, I wasn't able to complete the answer within the allowed number of steps.")]}
             return {"messages": [AIMessage(content=last_ai_content or "I'm sorry, I couldn't find an answer.")]}
 
 
