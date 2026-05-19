@@ -2,6 +2,7 @@ import os
 from enum import Enum
 from typing import Annotated
 
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import StructuredTool
@@ -176,6 +177,7 @@ User request: {user_input}"""),
         return chain.invoke({"user_input": user_input}).category
 
     def _build_graph(self):
+        memory = MemorySaver()
         react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.AGENT_CLASSIFIER_SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
@@ -242,9 +244,10 @@ User request: {user_input}"""),
         builder.add_edge("structured", END)
         builder.add_edge("unstructured", END)
 
-        return builder.compile()
+        return builder.compile(checkpointer=memory)
 
-    def run(self):
+    def run(self, session_id: str | None = None):
+        config = {"configurable": {"thread_id": session_id}} if session_id else {}
         print("Agent ready. Type 'quit' to exit.\n")
         while True:
             user_input = input("User: ").strip()
@@ -256,11 +259,12 @@ User request: {user_input}"""),
             reply = None
             for chunk in self.graph.stream(
                 {"messages": [HumanMessage(content=user_input)], "category": None},
+                config,
                 stream_mode="updates",
             ):
                 for node_name, update in chunk.items():
                     msgs = update.get("messages", [])
-                    if node_name in ("structured", "reject", "react"):
+                    if node_name in ("structured", "reject", "unstructured"):
                         for msg in msgs:
                             if msg.content:
                                 reply = msg.content
