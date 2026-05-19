@@ -199,11 +199,10 @@ User request: {user_input}"""),
             return react_func(state, 20)
 
         def react_func(state: AgentState, recursion_limit) -> dict:
-            user_msg = next(m for m in state["messages"] if isinstance(m, HumanMessage)).content
             last_ai_content = None
             try:
                 for chunk in react_subgraph.stream(
-                    {"messages": [HumanMessage(content=user_msg)]},
+                    {"messages": state["messages"]},
                     {"recursion_limit": recursion_limit},
                     stream_mode="updates",
                 ):
