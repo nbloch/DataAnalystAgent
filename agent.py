@@ -4,13 +4,13 @@ from typing import Annotated
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.tools import tool
+from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from langgraph.errors import GraphRecursionError
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, create_react_agent
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
 
 from data_analysis_tools import DatasetAnalyzer
@@ -40,55 +40,88 @@ class AgentState(TypedDict):
 
 
 # ---------------------------------------------------------------------------
+# Tool input schemas
+# ---------------------------------------------------------------------------
+
+class GetCategoriesInput(BaseModel):
+    pass
+
+class GetIntentsInput(BaseModel):
+    category: str | None = Field(default=None, description="Filter by category (case-sensitive). If None, returns all intents.")
+
+class GetDistributionInput(BaseModel):
+    column: str = Field(description="Column to compute distribution for. Common values: 'category', 'intent', 'flags'.")
+
+class GetExamplesInput(BaseModel):
+    n: int = Field(default=5, description="Maximum number of examples to return.")
+    category: str | None = Field(default=None, description="Filter by category.")
+    intent: str | None = Field(default=None, description="Filter by intent.")
+
+class CountRowsInput(BaseModel):
+    category: str | None = Field(default=None, description="Filter by category.")
+    intent: str | None = Field(default=None, description="Filter by intent.")
+
+class SearchKeywordInput(BaseModel):
+    keyword: str = Field(description="Substring to search for (case-insensitive).")
+    column: str = Field(default="instruction", description="Column to search in.")
+
+class GetStatsInput(BaseModel):
+    pass
+
+# ---------------------------------------------------------------------------
+# Tool output types
+# ---------------------------------------------------------------------------
+
+class DatasetRow(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    instruction: str
+    response: str
+    category: str
+    intent: str
+
+class DatasetStats(BaseModel):
+    num_rows: int
+    columns: list[str]
+    unique_counts: dict[str, int]
+    avg_instruction_length: float
+    avg_response_length: float
+
+# ---------------------------------------------------------------------------
 # Dataset tools
 # ---------------------------------------------------------------------------
 
 _analyzer = DatasetAnalyzer()
 
-
-@tool
-def get_categories() -> list[str]:
-    """Return all unique categories in the dataset."""
+def _get_categories() -> list[str]:
     return _analyzer.get_categories()
 
-
-@tool
-def get_intents(category: str | None = None) -> list[str]:
-    """Return unique intents, optionally filtered by category."""
+def _get_intents(category: str | None = None) -> list[str]:
     return _analyzer.get_intents(category)
 
-
-@tool
-def get_distribution(column: str) -> dict:
-    """Return value counts for a column. Common columns: 'category', 'intent', 'flags'."""
+def _get_distribution(column: str) -> dict[str, int]:
     return _analyzer.get_distribution(column)
 
-
-@tool
-def get_examples(n: int = 5, category: str | None = None, intent: str | None = None) -> list[dict]:
-    """Return up to n examples, optionally filtered by category and/or intent."""
+def _get_examples(n: int = 5, category: str | None = None, intent: str | None = None) -> list[DatasetRow]:
     filters = {k: v for k, v in {"category": category, "intent": intent}.items() if v is not None}
-    return _analyzer.get_examples(n, **filters)
+    return [DatasetRow(**row) for row in _analyzer.get_examples(n, **filters)]
 
-
-@tool
-def count_rows(category: str | None = None, intent: str | None = None) -> int:
-    """Count rows in the dataset, optionally filtered by category and/or intent."""
+def _count_rows(category: str | None = None, intent: str | None = None) -> int:
     filters = {k: v for k, v in {"category": category, "intent": intent}.items() if v is not None}
     return _analyzer.count(**filters)
 
+def _search_keyword(keyword: str, column: str = "instruction") -> list[DatasetRow]:
+    return [DatasetRow(**row) for row in _analyzer.search(keyword, column)]
 
-@tool
-def search_keyword(keyword: str, column: str = "instruction") -> list[dict]:
-    """Search for rows where a column contains a keyword (case-insensitive)."""
-    return _analyzer.search(keyword, column)
+def _get_stats() -> DatasetStats:
+    return DatasetStats(**_analyzer.get_stats())
 
-
-@tool
-def get_stats() -> dict:
-    """Return dataset statistics: row count, columns, unique counts, avg message lengths."""
-    return _analyzer.get_stats()
-
+get_categories   = StructuredTool(name="get_categories",   description="Return all unique categories in the dataset.",                                              func=_get_categories,   args_schema=GetCategoriesInput)
+get_intents      = StructuredTool(name="get_intents",      description="Return unique intents, optionally filtered by category.",                                   func=_get_intents,      args_schema=GetIntentsInput)
+get_distribution = StructuredTool(name="get_distribution", description="Return value counts for a column. Common columns: 'category', 'intent', 'flags'.",          func=_get_distribution, args_schema=GetDistributionInput)
+get_examples     = StructuredTool(name="get_examples",     description="Return up to n examples, optionally filtered by category and/or intent.",                   func=_get_examples,     args_schema=GetExamplesInput)
+count_rows       = StructuredTool(name="count_rows",       description="Count rows in the dataset, optionally filtered by category and/or intent.",                 func=_count_rows,       args_schema=CountRowsInput)
+search_keyword   = StructuredTool(name="search_keyword",   description="Search for rows where a column contains a keyword (case-insensitive).",                     func=_search_keyword,   args_schema=SearchKeywordInput)
+get_stats        = StructuredTool(name="get_stats",        description="Return dataset statistics: row count, columns, unique counts, avg message lengths.",         func=_get_stats,        args_schema=GetStatsInput)
 
 TOOLS = [get_categories, get_intents, get_distribution, get_examples, count_rows, search_keyword, get_stats]
 
