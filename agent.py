@@ -153,15 +153,26 @@ User request: {user_input}"""),
 
         def react_node(state: AgentState) -> dict:
             user_msg = next(m for m in state["messages"] if isinstance(m, HumanMessage)).content
-            result = react_subgraph.invoke(
+            last_ai_content = None
+            for chunk in react_subgraph.stream(
                 {"messages": [HumanMessage(content=user_msg)]},
-                {"recursion_limit": 10},  # allows up to ~3 tool call cycles
-            )
-            last = next(
-                (m for m in reversed(result["messages"]) if isinstance(m, AIMessage) and m.content),
-                None,
-            )
-            return {"messages": [AIMessage(content=last.content if last else "I'm sorry, I couldn't find an answer to your question.")]}
+                {"recursion_limit": 10},
+                stream_mode="updates",
+            ):
+                for node_name, update in chunk.items():
+                    msgs = update.get("messages", [])
+                    if node_name == "agent":
+                        for msg in msgs:
+                            if hasattr(msg, "tool_calls") and msg.tool_calls:
+                                for tc in msg.tool_calls:
+                                    args_str = ", ".join(f"{k}={v!r}" for k, v in tc["args"].items())
+                                    print(f"  [tool call] {tc['name']}({args_str})")
+                            elif isinstance(msg, AIMessage) and msg.content:
+                                last_ai_content = msg.content
+                    elif node_name == "tools":
+                        for msg in msgs:
+                            print(f"  [tool result] {str(msg.content)[:300]}")
+            return {"messages": [AIMessage(content=last_ai_content or "I'm sorry, I couldn't find an answer.")]}
 
         def route_classify(state: AgentState) -> str:
             return {
@@ -197,17 +208,29 @@ User request: {user_input}"""),
             if not user_input:
                 continue
 
-            result = self.graph.invoke({
-                "messages": [HumanMessage(content=user_input)],
-                "category": None,
-            })
-
-            last_ai = next(
-                (m for m in reversed(result["messages"]) if isinstance(m, AIMessage) and m.content),
-                None,
-            )
-            reply = last_ai.content if last_ai else "I'm sorry, I couldn't find an answer to your question."
-            print(f"Assistant: {reply}\n")
+            reply = None
+            for chunk in self.graph.stream(
+                {"messages": [HumanMessage(content=user_input)], "category": None},
+                stream_mode="updates",
+            ):
+                for node_name, update in chunk.items():
+                    msgs = update.get("messages", [])
+                    if node_name == "classify":
+                        print(f"  [classify] {update['category'].value}")
+                    elif node_name == "structured":
+                        for msg in msgs:
+                            if hasattr(msg, "tool_calls"):
+                                for tc in msg.tool_calls:
+                                    args_str = ", ".join(f"{k}={v!r}" for k, v in tc["args"].items())
+                                    print(f"  [tool call] {tc['name']}({args_str})")
+                    elif node_name == "structured_tool":
+                        for msg in msgs:
+                            print(f"  [tool result] {str(msg.content)[:300]}")
+                    elif node_name in ("structured_answer", "reject", "react"):
+                        for msg in msgs:
+                            if msg.content:
+                                reply = msg.content
+            print(f"Assistant: {reply or 'I could not find an answer.'}\n")
 
 
 def make_graph(config=None):
