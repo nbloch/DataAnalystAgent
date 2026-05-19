@@ -80,6 +80,10 @@ class DatasetStats(BaseModel):
     avg_instruction_length: float
     avg_response_length: float
 
+class SearchResult(BaseModel):
+    results: list[DatasetRow]
+    extra: str | None = None
+
 # ---------------------------------------------------------------------------
 # Dataset tools
 # ---------------------------------------------------------------------------
@@ -97,8 +101,13 @@ def _count_rows(category: str | None = None, intent: str | None = None) -> int:
     filters = {k: v for k, v in {"category": category, "intent": intent}.items() if v is not None}
     return _analyzer.count(**filters)
 
-def _search_keyword(keyword: str, column: str = "instruction") -> list[DatasetRow]:
-    return [DatasetRow(**row) for row in _analyzer.search(keyword, column)]
+def _search_keyword(keyword: str, column: str = "instruction") -> SearchResult:
+    rows = _analyzer.search(keyword, column)
+    total = len(rows)
+    return SearchResult(
+        results=[DatasetRow(**row) for row in rows[:10]],
+        extra=f"[{total - 10} more entries]" if total > 10 else None,
+    )
 
 def _get_stats() -> DatasetStats:
     return DatasetStats(**_analyzer.get_stats())
@@ -170,6 +179,8 @@ User request: {user_input}"""),
         react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.AGENT_CLASSIFIER_SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
+            if not state["messages"]:
+                return {"category": RequestCategory.OUT_OF_SCOPE}
             category = self._classify(state["messages"][-1].content)
             return {"category": category}
 
