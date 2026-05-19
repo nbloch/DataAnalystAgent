@@ -1,7 +1,7 @@
 {
   "dependencies": ["."],
   "graphs": {
-    "data_analyst": "./agent.py:graph"
+    "data_analyst": "./agent.py:make_graph"
   },
   "env": ".env"
 }
