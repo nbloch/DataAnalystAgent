@@ -56,11 +56,12 @@ class DatasetAnalyzer:
         counts = self.data[column].value_counts()
         return counts.to_dict()
 
-    def get_examples(self, n: int = 5, **filters) -> list[dict]:
+    def get_examples(self, n: int = 5, offset: int = 0, **filters) -> list[dict]:
         """Return up to n rows from the dataset, optionally filtered by column values.
 
         Args:
             n: Maximum number of examples to return.
+            offset: Number of rows to skip before returning results (for pagination).
             **filters: Keyword arguments used to filter rows by exact column match.
                        e.g. category="SHIPPING", intent="track_order".
 
@@ -75,7 +76,7 @@ class DatasetAnalyzer:
             if col not in df.columns:
                 raise ValueError(f"Column '{col}' not found. Available columns: {list(df.columns)}")
             df = df[df[col] == val]
-        return df.head(n).to_dict(orient="records")
+        return df.iloc[offset:offset + n].to_dict(orient="records")
 
     def count(self, **filters) -> int:
         """Count rows in the dataset, optionally filtered by column values.

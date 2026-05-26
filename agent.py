@@ -49,6 +49,7 @@ class GetDistributionInput(BaseModel):
 
 class GetExamplesInput(BaseModel):
     n: int = Field(default=5, description="Maximum number of examples to return.")
+    offset: int = Field(default=0, description="Number of examples to skip (for pagination).")
     category: str | None = Field(default=None, description="Filter by category.")
     intent: str | None = Field(default=None, description="Filter by intent.")
 
@@ -94,9 +95,9 @@ _analyzer = DatasetAnalyzer()
 def _get_distribution(column: str) -> dict[str, int]:
     return _analyzer.get_distribution(column)
 
-def _get_examples(n: int = 5, category: str | None = None, intent: str | None = None) -> list[DatasetRow]:
+def _get_examples(n: int = 5, offset: int = 0, category: str | None = None, intent: str | None = None) -> list[DatasetRow]:
     filters = {k: v for k, v in {"category": category, "intent": intent}.items() if v is not None}
-    return [DatasetRow(**row) for row in _analyzer.get_examples(n, **filters)]
+    return [DatasetRow(**row) for row in _analyzer.get_examples(n, offset=offset, **filters)]
 
 def _count_rows(category: str | None = None, intent: str | None = None) -> int:
     filters = {k: v for k, v in {"category": category, "intent": intent}.items() if v is not None}
