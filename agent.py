@@ -2,7 +2,7 @@ import os
 from enum import Enum
 from typing import Annotated
 
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import StructuredTool
@@ -139,6 +139,8 @@ You are a data analyst agent. Answer the user requests about the Bitext customer
     AGENT_CLASSIFIER_SYSTEM_PROMPT = """
 You are a data analyst agent. Answer the user requests about the Bitext customer support dataset.
 
+IMPORTANT: Never output raw function call syntax, XML tags, or any internal formatting like <｜DSML｜...> in your responses. Always use the provided tool-calling mechanism. Your responses to the user must contain only plain text or markdown.
+
 The dataset contains the following categories and intents:
 - ACCOUNT: create_account, delete_account, edit_account, recover_password, registration_problems, switch_account
 - CANCEL: check_cancellation_fee
@@ -178,7 +180,7 @@ User request: {user_input}"""),
         return chain.invoke({"user_input": user_input}).category
 
     def _build_graph(self):
-        memory = MemorySaver()
+        memory = SqliteSaver.from_conn_string("checkpoints.db")
         react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.AGENT_CLASSIFIER_SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
