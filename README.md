@@ -1,10 +1,48 @@
-# Nebius Data Analyst Agent
+# Bitext Data Analyst Agent
 
-A conversational LangGraph agent for exploring the [Bitext customer support dataset](https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset), powered by DeepSeek-V3.2 via Nebius AI.
+A conversational AI agent for analyzing the [Bitext customer support dataset](https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset). Available via CLI, web UI, and REST API.
+
+## Quick Start
+
+### Setup
+```bash
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Create `.env`: `NEBIUS_API_KEY=your_key_here`
+
+### Three Ways to Use
+
+**CLI** - Interactive terminal
+```bash
+python main.py --session my_session
+```
+
+**Web UI** - Chat interface with session management
+```bash
+streamlit run streamlit_app.py
+# Open http://localhost:8501
+```
+
+**API** - REST endpoints for integrations
+```bash
+python mcp_server.py
+# Open http://localhost:8000/docs for interactive API docs
+```
+
+**Example queries:**
+```
+What categories exist in the dataset?
+How many refund requests did we get?
+Show me 5 examples of SHIPPING category
+Summarize how agents respond to complaints
+```
 
 ## Architecture
 
-The agent uses a LangGraph state machine with three paths:
+### Agent Graph
 
 ```
 User input
@@ -12,75 +50,78 @@ User input
     ▼
 [classify]  ──▶  Out-of-scope  ──▶  [reject]
     │
-    ├──▶  Structured    ──▶  [ReAct agent, limit 10 steps]
+    ├──▶  Structured    ──▶  [ReAct, 10 iterations max]
     │
-    └──▶  Unstructured  ──▶  [ReAct agent, limit 20 steps]
+    └──▶  Unstructured  ──▶  [ReAct, 20 iterations max]
 ```
 
-- **Structured**: questions with enumerable answers (counts, distributions, example lookups) — answered with dataset tools
-- **Unstructured**: qualitative/interpretive questions (themes, tone, writing style) — answered with deeper ReAct reasoning
-- **Out-of-scope**: questions unrelated to the dataset — politely rejected
+**Query Types:**
+- **Structured**: Counts, distributions, example lookups → quick, focused reasoning
+- **Unstructured**: Themes, patterns, summaries → deeper analysis
+- **Out-of-scope**: Unrelated questions → polite rejection
 
-Conversation history is persisted across sessions via SQLite (`checkpoints.db`).
+### Model
+
+- **Qwen/Qwen3-235B-A22B-Instruct-2507** via Nebius Token Factory
+  - Strong instruction following
+  - Fast response times
+  - Cost-efficient
+
+### Persistence
+
+- SQLite checkpoints in `checkpoints.db`
+- Full conversation history per session
+- Restored on restart with same session ID
+
+## Tools (7 Available)
+
+| Tool | Purpose | Parameters |
+|------|---------|-----------|
+| `get_examples` | Fetch dataset rows | n, offset, category, intent |
+| `get_distribution` | Value counts per column | column |
+| `count_rows` | Count filtered rows | category, intent |
+| `search_keyword` | Substring search | keyword, column |
+| `get_categories` | List all categories | - |
+| `get_intents` | List intents by category | category |
+| `get_stats` | Dataset statistics | - |
 
 ## Dataset
 
-The Bitext customer support dataset contains customer–agent conversation pairs across 11 categories and 27 intents:
+26,872 rows across 11 categories and 27 intents:
 
-| Category     | Intents |
-|-------------|---------|
-| ACCOUNT     | create_account, delete_account, edit_account, recover_password, registration_problems, switch_account |
-| CANCEL      | check_cancellation_fee |
-| CONTACT     | contact_customer_service, contact_human_agent |
-| DELIVERY    | delivery_options, delivery_period |
-| FEEDBACK    | complaint, review |
-| INVOICE     | check_invoice, get_invoice |
-| ORDER       | cancel_order, change_order, place_order, track_order |
-| PAYMENT     | check_payment_methods, payment_issue |
-| REFUND      | check_refund_policy, get_refund, track_refund |
-| SHIPPING    | change_shipping_address, set_up_shipping_address |
-| SUBSCRIPTION| newsletter_subscription |
+| Category | Intents |
+|----------|---------|
+| ACCOUNT | create_account, delete_account, edit_account, recover_password, registration_problems, switch_account |
+| CANCEL | check_cancellation_fee |
+| CONTACT | contact_customer_service, contact_human_agent |
+| DELIVERY | delivery_options, delivery_period |
+| FEEDBACK | complaint, review |
+| INVOICE | check_invoice, get_invoice |
+| ORDER | cancel_order, change_order, place_order, track_order |
+| PAYMENT | check_payment_methods, payment_issue |
+| REFUND | check_refund_policy, get_refund, track_refund |
+| SHIPPING | change_shipping_address, set_up_shipping_address |
+| SUBSCRIPTION | newsletter_subscription |
 
-## Tools
+## API Reference
 
-| Tool | Description |
-|------|-------------|
-| `get_distribution` | Value counts for a column (`category`, `intent`, `flags`) |
-| `get_examples` | Return up to n rows, with optional category/intent filter and pagination |
-| `count_rows` | Count rows, optionally filtered |
-| `search_keyword` | Case-insensitive substring search on any column (returns up to 10 results) |
-| `get_stats` | Row count, column names, unique counts, avg message lengths |
-
-## Setup
+All tools available as REST endpoints via FastAPI. Visit `http://localhost:8000/docs` for interactive documentation.
 
 ```bash
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+curl -X POST http://localhost:8000/tools/get_examples \
+  -H "Content-Type: application/json" \
+  -d '{"n": 5, "category": "REFUND"}'
 ```
 
-Create a `.env` file:
+**Endpoints:** `get_examples` | `get_distribution` | `count_rows` | `search_keyword` | `get_categories` | `get_intents` | `get_stats` | `health`
+
+## Project Structure
 
 ```
-NEBIUS_API_KEY=your_key_here
-```
-
-## Usage
-
-```bash
-# Single session (no memory persistence)
-python main.py
-
-# Named session (conversation persists in checkpoints.db)
-python main.py --session my_session
-```
-
-### Example queries
-
-```
-How many rows are in the dataset?
-What are all the intents in the ORDER category?
-Show me 3 examples of complaints.
-How do agents typically handle refund requests?
-What's the distribution of categories?
+agent.py              # ReAct agent (LangGraph)
+main.py               # CLI entry point
+streamlit_app.py      # Web UI (Streamlit)  
+mcp_server.py         # REST API (FastAPI)
+data_analysis_tools.py # Dataset analyzer
+requirements.txt      # Dependencies
 ```
