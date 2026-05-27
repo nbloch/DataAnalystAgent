@@ -26,10 +26,13 @@ streamlit run streamlit_app.py
 # Open http://localhost:8501
 ```
 
-**API** - REST endpoints for integrations
+**MCP Server** - FastMCP for Claude and AI clients
 ```bash
+# Terminal 1: Start server
 python mcp_server.py
-# Open http://localhost:8000/docs for interactive API docs
+
+# Terminal 2: Test with client
+python mcp_client.py
 ```
 
 **Example queries:**
@@ -103,17 +106,28 @@ User input
 | SHIPPING | change_shipping_address, set_up_shipping_address |
 | SUBSCRIPTION | newsletter_subscription |
 
-## API Reference
+## MCP Server & Client
 
-All tools available as REST endpoints via FastAPI. Visit `http://localhost:8000/docs` for interactive documentation.
+FastMCP server exposes 7 tools for AI clients via Model Context Protocol.
 
+**Start server:**
 ```bash
-curl -X POST http://localhost:8000/tools/get_examples \
-  -H "Content-Type: application/json" \
-  -d '{"n": 5, "category": "REFUND"}'
+python mcp_server.py
 ```
 
-**Endpoints:** `get_examples` | `get_distribution` | `count_rows` | `search_keyword` | `get_categories` | `get_intents` | `get_stats` | `health`
+**Test with client (in another terminal):**
+```bash
+python mcp_client.py
+```
+
+**Available tools:**
+- `get_examples(n, offset, category, intent)` - Fetch dataset rows
+- `get_distribution(column)` - Value counts for column
+- `count_rows(category, intent)` - Count filtered rows
+- `search_keyword(keyword, column)` - Substring search
+- `get_categories()` - List all categories
+- `get_intents(category)` - List intents
+- `get_stats()` - Dataset statistics
 
 ## Project Structure
 
@@ -121,7 +135,8 @@ curl -X POST http://localhost:8000/tools/get_examples \
 agent.py              # ReAct agent (LangGraph)
 main.py               # CLI entry point
 streamlit_app.py      # Web UI (Streamlit)  
-mcp_server.py         # REST API (FastAPI)
+mcp_server.py         # MCP server (FastMCP)
+mcp_client.py         # MCP client (for testing)
 data_analysis_tools.py # Dataset analyzer
 requirements.txt      # Dependencies
 ```

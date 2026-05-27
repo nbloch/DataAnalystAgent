@@ -1,142 +1,132 @@
-"""REST API server exposing dataset analysis tools."""
+"""FastMCP server exposing dataset analysis tools for Claude and other AI clients."""
 
+import os
 from typing import Optional
+
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from mcp.server.fastmcp import FastMCP
 
 from data_analysis_tools import DatasetAnalyzer
 
 load_dotenv()
 
-app = FastAPI(
-    title="Data Analyst API",
-    description="API for analyzing the Bitext customer support dataset",
-    version="1.0.0"
-)
-
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# Create FastMCP server
+mcp = FastMCP("data-analyst")
 analyzer = DatasetAnalyzer()
 
 
-# Request schemas
-class GetExamplesRequest(BaseModel):
-    n: int = 5
-    offset: int = 0
-    category: Optional[str] = None
+@mcp.tool()
+def get_examples(
+    n: int = 5,
+    offset: int = 0,
+    category: Optional[str] = None,
     intent: Optional[str] = None
+) -> list[dict]:
+    """Return up to n examples from the dataset.
+
+    Args:
+        n: Maximum number of examples to return (default 5).
+        offset: Number of examples to skip for pagination (default 0).
+        category: Optional filter by category (e.g., 'ACCOUNT', 'REFUND').
+        intent: Optional filter by intent (e.g., 'get_refund', 'cancel_order').
+
+    Returns:
+        List of dataset rows as dicts with keys: instruction, response, category, intent.
+    """
+    filters = {k: v for k, v in {"category": category, "intent": intent}.items() if v}
+    return analyzer.get_examples(n, offset=offset, **filters)
 
 
-class GetDistributionRequest(BaseModel):
-    column: str
+@mcp.tool()
+def get_distribution(column: str) -> dict[str, int]:
+    """Return value counts for a column.
+
+    Args:
+        column: Column name ('category', 'intent', 'flags', etc.)
+
+    Returns:
+        Dict mapping each unique value to its count, sorted by frequency.
+    """
+    return analyzer.get_distribution(column)
 
 
-class CountRowsRequest(BaseModel):
-    category: Optional[str] = None
-    intent: Optional[str] = None
+@mcp.tool()
+def count_rows(category: Optional[str] = None, intent: Optional[str] = None) -> int:
+    """Count rows in the dataset.
+
+    Args:
+        category: Optional filter by category.
+        intent: Optional filter by intent.
+
+    Returns:
+        Integer count of matching rows.
+    """
+    filters = {k: v for k, v in {"category": category, "intent": intent}.items() if v}
+    return analyzer.count(**filters)
 
 
-class SearchKeywordRequest(BaseModel):
-    keyword: str
-    column: str = "instruction"
+@mcp.tool()
+def search_keyword(keyword: str, column: str = "instruction") -> dict:
+    """Search for rows where a column contains a keyword.
 
+    Args:
+        keyword: Substring to search for (case-insensitive).
+        column: Column to search in (default 'instruction').
 
-class GetIntentsRequest(BaseModel):
-    category: Optional[str] = None
-
-
-@app.get("/health")
-def health_check():
-    """Health check endpoint."""
-    return {"status": "ok", "service": "data-analyst-api"}
-
-
-@app.get("/tools")
-def list_tools():
-    """List all available tools."""
-    return {
-        "tools": [
-            {"name": "get_examples", "description": "Fetch dataset rows"},
-            {"name": "get_distribution", "description": "Value counts per column"},
-            {"name": "count_rows", "description": "Count filtered rows"},
-            {"name": "search_keyword", "description": "Substring search"},
-            {"name": "get_categories", "description": "List all categories"},
-            {"name": "get_intents", "description": "List intents by category"},
-            {"name": "get_stats", "description": "Dataset statistics"},
-        ]
-    }
-
-
-@app.post("/tools/get_examples")
-def get_examples(req: GetExamplesRequest):
-    """Return up to n examples from the dataset."""
-    filters = {k: v for k, v in {"category": req.category, "intent": req.intent}.items() if v}
-    return {"results": analyzer.get_examples(req.n, offset=req.offset, **filters)}
-
-
-@app.post("/tools/get_distribution")
-def get_distribution(req: GetDistributionRequest):
-    """Return value counts for a column."""
-    return {"distribution": analyzer.get_distribution(req.column)}
-
-
-@app.post("/tools/count_rows")
-def count_rows(req: CountRowsRequest):
-    """Count rows in the dataset."""
-    filters = {k: v for k, v in {"category": req.category, "intent": req.intent}.items() if v}
-    return {"count": analyzer.count(**filters)}
-
-
-@app.post("/tools/search_keyword")
-def search_keyword(req: SearchKeywordRequest):
-    """Search for rows where a column contains a keyword."""
-    rows = analyzer.search(req.keyword, req.column)
+    Returns:
+        Dict with 'results' (list of matching rows) and 'extra' (truncation notice if any).
+    """
+    rows = analyzer.search(keyword, column)
     total = len(rows)
     return {
         "results": rows[:10],
-        "total": total,
-        "extra": f"[{total - 10} more entries]" if total > 10 else None
+        "extra": f"[{total - 10} more entries]" if total > 10 else None,
+        "total": total
     }
 
 
-@app.post("/tools/get_categories")
-def get_categories():
-    """Get all unique categories in the dataset."""
-    return {"categories": analyzer.get_categories()}
+@mcp.tool()
+def get_categories() -> list[str]:
+    """Get all unique categories in the dataset.
+
+    Returns:
+        Sorted list of category names.
+    """
+    return analyzer.get_categories()
 
 
-@app.post("/tools/get_intents")
-def get_intents(req: GetIntentsRequest):
-    """Get all intents, optionally filtered by category."""
-    return {"intents": analyzer.get_intents(req.category)}
+@mcp.tool()
+def get_intents(category: Optional[str] = None) -> list[str]:
+    """Get all intents, optionally filtered by category.
+
+    Args:
+        category: Optional category filter.
+
+    Returns:
+        Sorted list of intent names.
+    """
+    return analyzer.get_intents(category)
 
 
-@app.post("/tools/get_stats")
-def get_stats():
-    """Get dataset statistics."""
-    return {"stats": analyzer.get_stats()}
+@mcp.tool()
+def get_stats() -> dict:
+    """Get dataset statistics.
+
+    Returns:
+        Dict with num_rows, columns, unique_counts, avg lengths.
+    """
+    return analyzer.get_stats()
 
 
 if __name__ == "__main__":
-    import uvicorn
-    print("🚀 Starting Data Analyst API on http://0.0.0.0:8000")
-    print("📚 Available endpoints:")
-    print("   POST /tools/get_examples")
-    print("   POST /tools/get_distribution")
-    print("   POST /tools/count_rows")
-    print("   POST /tools/search_keyword")
-    print("   POST /tools/get_categories")
-    print("   POST /tools/get_intents")
-    print("   POST /tools/get_stats")
-    print("🏥 Health check: GET /health")
-    print("📖 Docs: http://localhost:8000/docs")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("Starting FastMCP Server: Data Analyst")
+    print("Available tools (7):")
+    print("   - get_examples: Fetch dataset rows")
+    print("   - get_distribution: Value counts per column")
+    print("   - count_rows: Count filtered rows")
+    print("   - search_keyword: Substring search")
+    print("   - get_categories: List all categories")
+    print("   - get_intents: List intents by category")
+    print("   - get_stats: Dataset statistics")
+    print("\n Connect with: mcp-client connect mcp_server.py")
+    mcp.run()
