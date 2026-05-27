@@ -1,4 +1,5 @@
 import os
+import sqlite3
 from enum import Enum
 from typing import Annotated
 
@@ -180,7 +181,8 @@ User request: {user_input}"""),
         return chain.invoke({"user_input": user_input}).category
 
     def _build_graph(self):
-        memory = SqliteSaver.from_conn_string("checkpoints.db")
+        conn = sqlite3.connect("checkpoints.db", check_same_thread=False)
+        memory = SqliteSaver(conn)
         react_subgraph = create_react_agent(self.llm, TOOLS, prompt=self.AGENT_CLASSIFIER_SYSTEM_PROMPT)
 
         def classify_node(state: AgentState) -> dict:
