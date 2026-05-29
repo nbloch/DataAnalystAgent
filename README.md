@@ -1,6 +1,10 @@
 # Bitext Data Analyst Agent
 
-A conversational AI agent for analyzing the [Bitext customer support dataset](https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset). Available via CLI, web UI, and REST API.
+**Students**: Tomer Porat & Nathanael Bloch
+
+A conversational AI agent for analyzing the [Bitext customer support dataset](https://huggingface.co/datasets/bitext/Bitext-customer-support-llm-chatbot-training-dataset). Available via CLI, web UI, and MCP server.
+
+**Assignment**: From AI Model to AI Agent - Assignment 3
 
 ## Quick Start
 
@@ -63,12 +67,18 @@ User input
 - **Unstructured**: Themes, patterns, summaries → deeper analysis
 - **Out-of-scope**: Unrelated questions → polite rejection
 
-### Model
+### Model Choice
 
-- **Qwen/Qwen3-235B-A22B-Instruct-2507** via Nebius Token Factory
-  - Strong instruction following
-  - Fast response times
-  - Cost-efficient
+**Primary Model**: `Qwen/Qwen3-235B-A22B-Instruct-2507` (Nebius Token Factory)
+
+**Justification**:
+- **Instruction Following**: Excels at structured tool use and multi-step reasoning required for ReAct agent
+- **Query Classification**: Accurately distinguishes structured/unstructured/out-of-scope queries
+- **Cost-Efficiency**: Optimized pricing on Nebius makes it practical for iterative development
+- **Reasoning Depth**: 235B parameter model provides sufficient capability without over-provisioning
+- **All LLM calls** use Nebius Token Factory models as per requirements
+
+**Single Model Approach**: We use one model for all roles (classification + reasoning) to keep the pipeline simple while maintaining performance across all query types.
 
 ### Persistence
 
@@ -139,4 +149,5 @@ mcp_server.py         # MCP server (FastMCP)
 mcp_client.py         # MCP client (for testing)
 data_analysis_tools.py # Dataset analyzer
 requirements.txt      # Dependencies
+README.md             # This file
 ```
